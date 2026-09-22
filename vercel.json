@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/api/evaluate", "destination": "/api/evaluate.py" }]
+}
