@@ -1,62 +1,66 @@
-from http.server import BaseHTTPRequestHandler
+import time
 import json
-import os
+from http.server import BaseHTTPRequestHandler
 from google import genai
 from google.genai import types
+import os
+
+# Initialize client using environment variable
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+# Define a primary and backup model
+PRIMARY_MODEL = "gemini-3.8-flash"
+BACKUP_MODEL = "gemini-3.6-flash"
+
+def ask_gemini_with_retry(prompt, max_retries=3):
+    models_to_try = [PRIMARY_MODEL, BACKUP_MODEL]
+    
+    for attempt in range(max_retries):
+        for model in models_to_try:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                return response.text, model
+                
+            except Exception as e:
+                err_str = str(e)
+                # If it's a 503 High Demand error, wait and retry
+                if "503" in err_str or "UNAVAILABLE" in err_str:
+                    wait_time = (2 ** attempt) # Exponential backoff: waits 1s, then 2s, then 4s
+                    print(f"Model {model} overloaded (503). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    # If it's a different error (like 401 unauthorized), raise it immediately
+                    raise e
+                    
+    raise Exception("Both Primary and Backup Gemini models are currently overloaded. Agent standing by.")
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        # Handle direct browser visits gracefully
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        response_data = {"status": "online", "message": "Laya Autonomous Agent endpoint is active. Send a POST request with a prompt."}
-        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+    # ... keep your existing do_GET method here ...
 
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
         
         try:
-            req_data = json.loads(post_data.decode('utf-8')) if post_data else {}
-            user_directive = req_data.get('prompt', 'Analyze current Polygon DeFi market conditions and formulate high-yield triangular arbitrage paths.')
+            req_data = json.loads(post_data.decode('utf-8'))
+            user_prompt = req_data.get('prompt', '')
             
-            api_key = os.environ.get("GEMINI_API_KEY")
-            if not api_key:
-                raise ValueError("GEMINI_API_KEY environment variable not configured in Vercel.")
-                
-            client = genai.Client(api_key=api_key)
-            model_id = "gemini-3.8-flash" 
-# You can also use "gemini-3.6-flash" as the error suggested
-            
-            system_instruction = (
-                "You are an elite autonomous DeFi and arbitrage strategy agent operating on Polygon PoS (Chain ID 137). "
-                "You have full reasoning capabilities, internet access, and freedom to analyze market metrics, "
-                "propose triangular swap paths, and evaluate risk parameters. Never suggest routes touching blacklisted or toxic pools."
-            )
-            
-            response = client.models.generate_content(
-                model=model_id,
-                contents=user_directive,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.2,
-                    max_output_tokens=1000,
-                ),
-            )
-            
-            response_payload = {
-                "agent_status": "SUCCESS",
-                "model_used": model_id,
-                "directive": user_directive,
-                "agent_response": response.text,
-                "action": "DISPATCH_TO_LAYA_GUARDRAIL"
-            }
+            # Use the new resilient retry function
+            agent_response, used_model = ask_gemini_with_retry(user_prompt)
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(response_payload).encode('utf-8'))
+            
+            payload = {
+                "agent_status": "SUCCESS",
+                "model_used": used_model,
+                "agent_response": agent_response
+            }
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
             
         except Exception as e:
             self.send_response(500)
