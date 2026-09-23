@@ -11,31 +11,36 @@
         .neon-text { text-shadow: 0 0 5px rgba(34, 211, 238, 0.5); }
         .log-container::-webkit-scrollbar { width: 6px; }
         .log-container::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        /* Markdown formatting for agent response */
+        .agent-text strong { color: #38bdf8; }
+        .agent-text code { background: #1e293b; padding: 2px 4px; border-radius: 3px; color: #a78bfa; }
     </style>
 </head>
 <body class="p-6 flex flex-col h-screen overflow-hidden">
 
     <!-- HEADER -->
-    <header class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+    <header class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4 shrink-0">
         <div>
             <h1 class="text-xl font-bold text-cyan-400 neon-text">LAYA HERMES GUARDRAIL</h1>
             <p class="text-xs text-slate-500 mt-1">Autonomous DeFi Polygon Arbitrage Interface</p>
         </div>
         <div class="flex gap-4">
-            <div id="status-evaluate" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-slate-500 indicator"></span> /api/evaluate
+            <div id="status-evaluate" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2 transition-colors duration-300">
+                <span class="w-2 h-2 rounded-full bg-slate-500 indicator transition-colors duration-300"></span> /api/evaluate
             </div>
-            <div id="status-agent" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-slate-500 indicator"></span> /api/autonomous_agent
+            <div id="status-agent" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2 transition-colors duration-300">
+                <span class="w-2 h-2 rounded-full bg-slate-500 indicator transition-colors duration-300"></span> /api/autonomous_agent
             </div>
         </div>
     </header>
 
-    <div class="grid grid-cols-3 gap-6 flex-1 min-h-0">
-        <!-- CONTROL PANEL -->
-        <div class="col-span-1 flex flex-col gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+        
+        <!-- LEFT COLUMN: CONTROLS (Scrollable if screen is small) -->
+        <div class="col-span-1 flex flex-col gap-4 overflow-y-auto pr-2 log-container">
             
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+            <!-- TELEMETRY -->
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg shrink-0">
                 <h2 class="text-sm font-bold text-emerald-400 mb-3">SYSTEM TELEMETRY</h2>
                 <div class="text-xs text-slate-400 flex justify-between mb-1">
                     <span>Auto-Ping Interval:</span> <span class="text-slate-200">10s</span>
@@ -48,11 +53,22 @@
                 </button>
             </div>
 
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex-1 flex flex-col">
-                <h2 class="text-sm font-bold text-rose-400 mb-3">MANUAL EXECUTION TEST</h2>
-                <p class="text-[10px] text-slate-500 mb-4">Send a mock trade to the Hermes Guardrail to verify blocklist & liquidity matrix processing.</p>
+            <!-- GEMINI AGENT COMMAND -->
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg shrink-0">
+                <h2 class="text-sm font-bold text-purple-400 mb-3">AGENT COMMAND CENTER</h2>
+                <p class="text-[10px] text-slate-500 mb-3">Dispatch natural language instructions to the Gemini reasoning engine.</p>
+                <textarea id="agent-prompt" rows="3" class="w-full bg-slate-950 border border-slate-700 text-xs p-2 rounded text-slate-300 focus:outline-none focus:border-purple-500 mb-3" placeholder="e.g. Scan the 3D heat map and formulate a triangular arbitrage route for WETH..."></textarea>
+                <button id="agent-btn" onclick="triggerAgent()" class="w-full py-2 bg-purple-900/40 hover:bg-purple-900/60 text-purple-400 border border-purple-800 rounded text-xs font-bold transition-all">
+                    DISPATCH TO AI
+                </button>
+            </div>
+
+            <!-- GUARDRAIL EVALUATION -->
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg shrink-0">
+                <h2 class="text-sm font-bold text-rose-400 mb-3">MANUAL GUARDRAIL TEST</h2>
+                <p class="text-[10px] text-slate-500 mb-3">Force a mock trade through Hermes to verify blocklist matrices.</p>
                 
-                <div class="space-y-3 flex-1">
+                <div class="space-y-3">
                     <div>
                         <label class="text-[10px] text-slate-400 block mb-1">Pool Address (Test Blocked Sushi Pool)</label>
                         <input id="test-pool" type="text" value="0x27e2929315ced73060bb7eccb1d160b30c1bc041" class="w-full bg-slate-950 border border-slate-700 text-xs p-2 rounded text-slate-300 focus:outline-none focus:border-cyan-500">
@@ -69,19 +85,19 @@
                     </div>
                 </div>
 
-                <button onclick="triggerEvaluation()" class="w-full py-2 mt-4 bg-rose-900/50 hover:bg-rose-900 text-rose-400 border border-rose-800 rounded text-xs font-bold transition-all">
+                <button onclick="triggerEvaluation()" class="w-full py-2 mt-4 bg-rose-900/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800 rounded text-xs font-bold transition-all">
                     TEST /api/evaluate
                 </button>
             </div>
         </div>
 
-        <!-- TERMINAL LOGS -->
-        <div class="col-span-2 bg-black border border-slate-800 rounded-lg flex flex-col">
-            <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex justify-between items-center rounded-t-lg">
-                <span class="text-xs text-slate-400">TERMINAL LOG OUTPUT</span>
-                <button onclick="clearLogs()" class="text-[10px] text-slate-500 hover:text-slate-300">CLEAR</button>
+        <!-- RIGHT COLUMN: TERMINAL LOGS -->
+        <div class="col-span-1 lg:col-span-2 bg-black border border-slate-800 rounded-lg flex flex-col h-full overflow-hidden">
+            <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex justify-between items-center shrink-0">
+                <span class="text-xs text-slate-400 font-bold tracking-widest">TERMINAL OUTPUT</span>
+                <button onclick="clearLogs()" class="text-[10px] text-slate-500 hover:text-slate-300 px-2 py-1 bg-slate-800 rounded">CLEAR</button>
             </div>
-            <div id="terminal-logs" class="p-4 flex-1 overflow-y-auto log-container space-y-2 text-xs">
+            <div id="terminal-logs" class="p-4 flex-1 overflow-y-auto log-container space-y-3 text-xs leading-relaxed">
                 <div class="text-slate-500">Initialize sequence starting...</div>
                 <div class="text-emerald-500">UI Dashboard Ready. Polling initialized.</div>
             </div>
@@ -93,7 +109,7 @@
         const API_AGENT = '/api/autonomous_agent';
         const logsContainer = document.getElementById('terminal-logs');
 
-        function appendLog(message, type = 'info') {
+        function appendLog(message, type = 'info', isMarkdown = false) {
             const div = document.createElement('div');
             const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
             let colorClass = 'text-slate-300';
@@ -102,14 +118,31 @@
             if (type === 'error') colorClass = 'text-rose-400';
             if (type === 'warn') colorClass = 'text-amber-400';
             if (type === 'cyan') colorClass = 'text-cyan-400';
+            if (type === 'purple') colorClass = 'text-purple-400';
 
-            div.innerHTML = `<span class="text-slate-600">[${timestamp}]</span> <span class="${colorClass}">${message}</span>`;
+            // Very basic markdown parsing for agent text (bold and code blocks)
+            let formattedMessage = message;
+            if (isMarkdown) {
+                formattedMessage = formattedMessage
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/`(.*?)`/g, '<code>$1</code>')
+                    .replace(/\n/g, '<br>');
+                colorClass += ' agent-text bg-slate-900/50 p-3 rounded border border-slate-800 mt-1 block';
+            }
+
+            div.innerHTML = `<span class="text-slate-600">[${timestamp}]</span> <span class="${colorClass}">${formattedMessage}</span>`;
             logsContainer.appendChild(div);
-            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // Auto scroll to bottom
+            setTimeout(() => {
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }, 50);
         }
 
         function clearLogs() {
             logsContainer.innerHTML = '';
+            appendLog('Terminal cleared.', 'slate');
         }
 
         function updateStatusBadge(id, isOnline) {
@@ -132,25 +165,15 @@
         async function pingEndpoints() {
             document.getElementById('last-ping-time').innerText = new Date().toLocaleTimeString();
             
-            // Ping Evaluate
             try {
                 const resEval = await fetch(API_EVAL);
                 updateStatusBadge('status-evaluate', resEval.ok);
-                if (!resEval.ok) appendLog(`GET /api/evaluate returned ${resEval.status}`, 'error');
-            } catch (err) {
-                updateStatusBadge('status-evaluate', false);
-                appendLog(`Ping failed: /api/evaluate`, 'error');
-            }
+            } catch (err) { updateStatusBadge('status-evaluate', false); }
 
-            // Ping Agent
             try {
                 const resAgent = await fetch(API_AGENT);
                 updateStatusBadge('status-agent', resAgent.ok);
-                if (!resAgent.ok) appendLog(`GET /api/autonomous_agent returned ${resAgent.status}`, 'error');
-            } catch (err) {
-                updateStatusBadge('status-agent', false);
-                appendLog(`Ping failed: /api/autonomous_agent`, 'error');
-            }
+            } catch (err) { updateStatusBadge('status-agent', false); }
         }
 
         async function triggerEvaluation() {
@@ -158,7 +181,7 @@
             const liq = parseFloat(document.getElementById('test-liq').value);
             const spread = parseFloat(document.getElementById('test-spread').value);
             
-            appendLog(`> Executing POST /api/evaluate for Pool [${pool.substring(0,8)}...]`, 'cyan');
+            appendLog(`> Initiating Guardrail Check for Pool [${pool.substring(0,8)}...]`, 'cyan');
 
             const payload = {
                 chain_id: 137,
@@ -185,14 +208,52 @@
                 } else {
                     appendLog(`Decision: ${data.decision} - ${data.reason}`, 'warn');
                 }
-                
-                appendLog(`Raw Response: ${JSON.stringify(data)}`);
             } catch (err) {
                 appendLog(`Execution Error: ${err.message}`, 'error');
             }
         }
 
-        // Start Auto-Ping
+        async function triggerAgent() {
+            const promptInput = document.getElementById('agent-prompt');
+            const btn = document.getElementById('agent-btn');
+            const promptText = promptInput.value.trim();
+            
+            if (!promptText) return;
+            
+            appendLog(`> User Directive: "${promptText}"`, 'cyan');
+            
+            // UI Loading state
+            btn.innerText = "THINKING...";
+            btn.classList.add('animate-pulse');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(API_AGENT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: promptText })
+                });
+                
+                const data = await res.json();
+                
+                if (data.agent_status === 'SUCCESS' || data.agent_response) {
+                    appendLog("Agent Neural Output:", 'purple');
+                    appendLog(data.agent_response || JSON.stringify(data), 'slate', true);
+                } else {
+                    appendLog(`Agent Error: ${data.error || 'Check Vercel logs for Python exception.'}`, 'error');
+                }
+            } catch (err) {
+                appendLog(`Dispatch Error: ${err.message}`, 'error');
+            } finally {
+                // Restore UI state
+                btn.innerText = "DISPATCH TO AI";
+                btn.classList.remove('animate-pulse');
+                btn.disabled = false;
+                promptInput.value = '';
+            }
+        }
+
+        // Initialize polling
         pingEndpoints();
         setInterval(pingEndpoints, 10000);
     </script>
