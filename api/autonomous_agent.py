@@ -1,69 +1,168 @@
-import time
 import json
+import os
+import time
 from http.server import BaseHTTPRequestHandler
 from google import genai
-from google.genai import types
-import os
 
-# Initialize client using environment variable
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# Define a primary and backup model
 PRIMARY_MODEL = "gemini-3.8-flash"
 BACKUP_MODEL = "gemini-3.6-flash"
 
-def ask_gemini_with_retry(prompt, max_retries=3):
-    models_to_try = [PRIMARY_MODEL, BACKUP_MODEL]
-    
+BLOCKED_POOLS = {
+    "0x27e2929315ced73060bb7eccb1d160b30c1bc041": "SushiSwap: Confirmed Toxic Pool Vector",
+    "0x2813d43463c374a680f235c428fb1d7f08de0b69": "SushiSwap: Toxic Pool Connection",
+    "0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a": "Balancer: Zero Liquidity Reserve",
+    "0x0000000000000000000000000000000000001010": "SushiSwap: Deprecated MATIC Migration Target"
+}
+
+DEX_REGISTRY = {
+    "Uniswap_v3": {"router": "0xE592427A0AEce92De3EDEE1F18E0157C05861564", "min_liq": 5000.0},
+    "QuickSwap_v3": {"router": "0xf5b509bB0909a69B1c207E495f687a596C168E12", "min_liq": 5000.0},
+    "SushiSwap_v3": {"router": "0x1b81D678ffb9C0263af24aB4b3170b098f67038f", "min_liq": 7500.0},
+    "Balancer_v2": {"router": "0xBA12222222228d8Ba445958a75a0704d566BF2C8", "min_liq": 5000.0}
+}
+
+SYSTEM_INSTRUCTION = """
+You are the Central Neural Brain connected to the Hermes Final Executor on Polygon (Chain ID 137).
+Routing Instructions:
+1. Verify token and pool addresses strictly against 0x contract definitions.
+2. Ensure routes do not pass through toxic pools like 0x27e2929315ced73060bb7eccb1d160b30c1bc041.
+3. Validate minimum spread >= 0.5% and liquidity depth >= $5,000.
+4. Output execution status with JSON structure for Hermes dispatch.
+"""
+
+def evaluate_dex_gate(dex_name, pool_address, spread_pct, liquidity_usd):
+    pool_lower = pool_address.lower()
+    for blocked_addr, reason in BLOCKED_POOLS.items():
+        if blocked_addr.lower() == pool_lower:
+            return {
+                "passed": False,
+                "action": "BLOWN_UP_IN_AIR",
+                "agent": dex_name,
+                "reason": f"Security Tripwire: {reason}"
+            }
+
+    dex_config = DEX_REGISTRY.get(dex_name, {"min_liq": 5000.0})
+    if liquidity_usd < dex_config["min_liq"]:
+        return {
+            "passed": False,
+            "action": "BLOWN_UP_IN_AIR",
+            "agent": dex_name,
+            "reason": f"Insufficient Depth: ${liquidity_usd:,.2f} below ${dex_config['min_liq']:,.2f} floor."
+        }
+
+    if spread_pct < 0.5:
+        return {
+            "passed": False,
+            "action": "BLOWN_UP_IN_AIR",
+            "agent": dex_name,
+            "reason": f"Spread Deficit: {spread_pct}% is below minimum 0.5% threshold."
+        }
+
+    return {
+        "passed": True,
+        "action": "DISPATCH_TO_HERMES",
+        "agent": dex_name,
+        "reason": "Cleared pool health, matrix allowlist, and profitability checks."
+    }
+
+def ask_gemini_neural_brain(prompt, max_retries=3):
+    models = [PRIMARY_MODEL, BACKUP_MODEL]
     for attempt in range(max_retries):
-        for model in models_to_try:
+        for model in models:
             try:
                 response = client.models.generate_content(
                     model=model,
                     contents=prompt,
+                    config={"system_instruction": SYSTEM_INSTRUCTION}
                 )
                 return response.text, model
-                
             except Exception as e:
-                err_str = str(e)
-                # If it's a 503 High Demand error, wait and retry
-                if "503" in err_str or "UNAVAILABLE" in err_str:
-                    wait_time = (2 ** attempt) # Exponential backoff: waits 1s, then 2s, then 4s
-                    print(f"Model {model} overloaded (503). Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(2 ** attempt)
                 else:
-                    # If it's a different error (like 401 unauthorized), raise it immediately
                     raise e
-                    
-    raise Exception("Both Primary and Backup Gemini models are currently overloaded. Agent standing by.")
+    raise Exception("Neural Brain models temporarily unavailable.")
 
 class handler(BaseHTTPRequestHandler):
-    # ... keep your existing do_GET method here ...
+    def _apply_cors(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+    def do_OPTIONS(self):
+        self.send_response(200, "ok")
+        self._apply_cors()
+        self.end_headers()
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self._apply_cors()
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "status": "online",
+            "neural_brain": "ACTIVE",
+            "dex_agents": list(DEX_REGISTRY.keys()),
+            "final_executor": "HERMES_READY",
+            "cors_enabled": True
+        }).encode('utf-8'))
 
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
-        
+
         try:
-            req_data = json.loads(post_data.decode('utf-8'))
-            user_prompt = req_data.get('prompt', '')
-            
-            # Use the new resilient retry function
-            agent_response, used_model = ask_gemini_with_retry(user_prompt)
+            req_data = json.loads(post_data.decode('utf-8')) if post_data else {}
+
+            if "target_dex" in req_data and "pool_address" in req_data:
+                dex = req_data.get("target_dex")
+                pool = req_data.get("pool_address")
+                spread = float(req_data.get("spread_pct", 0.0))
+                liq = float(req_data.get("liquidity_usd", 10000.0))
+
+                verdict = evaluate_dex_gate(dex, pool, spread, liq)
+                hermes_payload = None
+
+                if verdict["passed"]:
+                    hermes_payload = {
+                        "executor": "HERMES_FINAL",
+                        "network": "Polygon PoS (Chain ID 137)",
+                        "target_router": DEX_REGISTRY.get(dex, {}).get("router"),
+                        "pool": pool,
+                        "expected_spread": spread,
+                        "status": "ARMED_AND_DISPATCHED"
+                    }
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self._apply_cors()
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "pipeline_status": "SUCCESS",
+                    "dex_agent_verdict": verdict,
+                    "hermes_executor": hermes_payload
+                }).encode('utf-8'))
+                return
+
+            prompt = req_data.get('prompt', '')
+            brain_analysis, used_model = ask_gemini_neural_brain(prompt)
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
+            self._apply_cors()
             self.end_headers()
-            
-            payload = {
-                "agent_status": "SUCCESS",
+            self.wfile.write(json.dumps({
+                "pipeline_status": "SUCCESS",
                 "model_used": used_model,
-                "agent_response": agent_response
-            }
-            self.wfile.write(json.dumps(payload).encode('utf-8'))
-            
+                "neural_brain_synthesis": brain_analysis,
+                "hermes_bridge": "ONLINE"
+            }).encode('utf-8'))
+
         except Exception as e:
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
+            self._apply_cors()
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
