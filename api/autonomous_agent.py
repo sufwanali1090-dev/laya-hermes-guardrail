@@ -26,7 +26,7 @@ class handler(BaseHTTPRequestHandler):
                 raise ValueError("GEMINI_API_KEY environment variable not configured in Vercel.")
                 
             client = genai.Client(api_key=api_key)
-            model_id = "gemini-3.1-pro-preview"
+            model_id = "gemini-2.5-flash"
             
             system_instruction = (
                 "You are an elite autonomous DeFi and arbitrage strategy agent operating on Polygon PoS (Chain ID 137). "
