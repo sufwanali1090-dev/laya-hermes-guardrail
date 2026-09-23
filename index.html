@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laya Hermes Guardrail | Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap');
+        body { font-family: 'Fira Code', monospace; background-color: #020617; color: #f8fafc; }
+        .neon-text { text-shadow: 0 0 5px rgba(34, 211, 238, 0.5); }
+        .log-container::-webkit-scrollbar { width: 6px; }
+        .log-container::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="p-6 flex flex-col h-screen overflow-hidden">
+
+    <!-- HEADER -->
+    <header class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+        <div>
+            <h1 class="text-xl font-bold text-cyan-400 neon-text">LAYA HERMES GUARDRAIL</h1>
+            <p class="text-xs text-slate-500 mt-1">Autonomous DeFi Polygon Arbitrage Interface</p>
+        </div>
+        <div class="flex gap-4">
+            <div id="status-evaluate" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 indicator"></span> /api/evaluate
+            </div>
+            <div id="status-agent" class="px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-500 border border-slate-700 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 indicator"></span> /api/autonomous_agent
+            </div>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-3 gap-6 flex-1 min-h-0">
+        <!-- CONTROL PANEL -->
+        <div class="col-span-1 flex flex-col gap-4">
+            
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+                <h2 class="text-sm font-bold text-emerald-400 mb-3">SYSTEM TELEMETRY</h2>
+                <div class="text-xs text-slate-400 flex justify-between mb-1">
+                    <span>Auto-Ping Interval:</span> <span class="text-slate-200">10s</span>
+                </div>
+                <div class="text-xs text-slate-400 flex justify-between mb-4">
+                    <span>Last Pinged:</span> <span id="last-ping-time" class="text-slate-200">Waiting...</span>
+                </div>
+                <button onclick="pingEndpoints()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 rounded text-xs font-bold transition-all">
+                    FORCE PING ENDPOINTS
+                </button>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex-1 flex flex-col">
+                <h2 class="text-sm font-bold text-rose-400 mb-3">MANUAL EXECUTION TEST</h2>
+                <p class="text-[10px] text-slate-500 mb-4">Send a mock trade to the Hermes Guardrail to verify blocklist & liquidity matrix processing.</p>
+                
+                <div class="space-y-3 flex-1">
+                    <div>
+                        <label class="text-[10px] text-slate-400 block mb-1">Pool Address (Test Blocked Sushi Pool)</label>
+                        <input id="test-pool" type="text" value="0x27e2929315ced73060bb7eccb1d160b30c1bc041" class="w-full bg-slate-950 border border-slate-700 text-xs p-2 rounded text-slate-300 focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-[10px] text-slate-400 block mb-1">Liquidity (USD)</label>
+                            <input id="test-liq" type="number" value="12000" class="w-full bg-slate-950 border border-slate-700 text-xs p-2 rounded text-slate-300 focus:outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-400 block mb-1">Spread (%)</label>
+                            <input id="test-spread" type="number" value="0.85" step="0.01" class="w-full bg-slate-950 border border-slate-700 text-xs p-2 rounded text-slate-300 focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="triggerEvaluation()" class="w-full py-2 mt-4 bg-rose-900/50 hover:bg-rose-900 text-rose-400 border border-rose-800 rounded text-xs font-bold transition-all">
+                    TEST /api/evaluate
+                </button>
+            </div>
+        </div>
+
+        <!-- TERMINAL LOGS -->
+        <div class="col-span-2 bg-black border border-slate-800 rounded-lg flex flex-col">
+            <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex justify-between items-center rounded-t-lg">
+                <span class="text-xs text-slate-400">TERMINAL LOG OUTPUT</span>
+                <button onclick="clearLogs()" class="text-[10px] text-slate-500 hover:text-slate-300">CLEAR</button>
+            </div>
+            <div id="terminal-logs" class="p-4 flex-1 overflow-y-auto log-container space-y-2 text-xs">
+                <div class="text-slate-500">Initialize sequence starting...</div>
+                <div class="text-emerald-500">UI Dashboard Ready. Polling initialized.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_EVAL = '/api/evaluate';
+        const API_AGENT = '/api/autonomous_agent';
+        const logsContainer = document.getElementById('terminal-logs');
+
+        function appendLog(message, type = 'info') {
+            const div = document.createElement('div');
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            let colorClass = 'text-slate-300';
+            
+            if (type === 'success') colorClass = 'text-emerald-400';
+            if (type === 'error') colorClass = 'text-rose-400';
+            if (type === 'warn') colorClass = 'text-amber-400';
+            if (type === 'cyan') colorClass = 'text-cyan-400';
+
+            div.innerHTML = `<span class="text-slate-600">[${timestamp}]</span> <span class="${colorClass}">${message}</span>`;
+            logsContainer.appendChild(div);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        function clearLogs() {
+            logsContainer.innerHTML = '';
+        }
+
+        function updateStatusBadge(id, isOnline) {
+            const badge = document.getElementById(id);
+            const indicator = badge.querySelector('.indicator');
+            
+            if (isOnline) {
+                badge.classList.remove('bg-slate-800', 'text-slate-500', 'border-slate-700', 'bg-rose-900/30', 'text-rose-400', 'border-rose-800');
+                badge.classList.add('bg-emerald-900/30', 'text-emerald-400', 'border-emerald-800');
+                indicator.classList.remove('bg-slate-500', 'bg-rose-500');
+                indicator.classList.add('bg-emerald-500', 'animate-pulse');
+            } else {
+                badge.classList.remove('bg-emerald-900/30', 'text-emerald-400', 'border-emerald-800', 'bg-slate-800', 'text-slate-500', 'border-slate-700');
+                badge.classList.add('bg-rose-900/30', 'text-rose-400', 'border-rose-800');
+                indicator.classList.remove('bg-emerald-500', 'bg-slate-500', 'animate-pulse');
+                indicator.classList.add('bg-rose-500');
+            }
+        }
+
+        async function pingEndpoints() {
+            document.getElementById('last-ping-time').innerText = new Date().toLocaleTimeString();
+            
+            // Ping Evaluate
+            try {
+                const resEval = await fetch(API_EVAL);
+                updateStatusBadge('status-evaluate', resEval.ok);
+                if (!resEval.ok) appendLog(`GET /api/evaluate returned ${resEval.status}`, 'error');
+            } catch (err) {
+                updateStatusBadge('status-evaluate', false);
+                appendLog(`Ping failed: /api/evaluate`, 'error');
+            }
+
+            // Ping Agent
+            try {
+                const resAgent = await fetch(API_AGENT);
+                updateStatusBadge('status-agent', resAgent.ok);
+                if (!resAgent.ok) appendLog(`GET /api/autonomous_agent returned ${resAgent.status}`, 'error');
+            } catch (err) {
+                updateStatusBadge('status-agent', false);
+                appendLog(`Ping failed: /api/autonomous_agent`, 'error');
+            }
+        }
+
+        async function triggerEvaluation() {
+            const pool = document.getElementById('test-pool').value;
+            const liq = parseFloat(document.getElementById('test-liq').value);
+            const spread = parseFloat(document.getElementById('test-spread').value);
+            
+            appendLog(`> Executing POST /api/evaluate for Pool [${pool.substring(0,8)}...]`, 'cyan');
+
+            const payload = {
+                chain_id: 137,
+                pool_address: pool,
+                base_token: "WETH",
+                quote_token: "USDC",
+                spread_pct: spread,
+                pool_liquidity_usd: liq
+            };
+
+            try {
+                const res = await fetch(API_EVAL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await res.json();
+                
+                if (data.decision === 'EXECUTE') {
+                    appendLog(`Decision: ${data.decision} - ${data.reason}`, 'success');
+                } else if (data.decision === 'BLACKLIST_AND_ABORT') {
+                    appendLog(`Decision: ${data.decision} - ${data.reason}`, 'error');
+                } else {
+                    appendLog(`Decision: ${data.decision} - ${data.reason}`, 'warn');
+                }
+                
+                appendLog(`Raw Response: ${JSON.stringify(data)}`);
+            } catch (err) {
+                appendLog(`Execution Error: ${err.message}`, 'error');
+            }
+        }
+
+        // Start Auto-Ping
+        pingEndpoints();
+        setInterval(pingEndpoints, 10000);
+    </script>
+</body>
+</html>
